@@ -1,0 +1,140 @@
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
+from kivy.uix.popup import Popup
+import pyodbc
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+class SQLApp(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+
+        # Server Information Fields
+        self.add_widget(Label(text="Server"))
+        self.server_input = TextInput(hint_text="Server")
+        self.add_widget(self.server_input)
+
+        self.add_widget(Label(text="Database"))
+        self.database_input = TextInput(hint_text="Database")
+        self.add_widget(self.database_input)
+
+        self.add_widget(Label(text="UID"))
+        self.uid_input = TextInput(hint_text="UID")
+        self.add_widget(self.uid_input)
+
+        self.add_widget(Label(text="Password"))
+        self.password_input = TextInput(hint_text="Password", password=True)
+        self.add_widget(self.password_input)
+
+        # SQL Query Field
+        self.add_widget(Label(text="SQL Query"))
+        self.query_input = TextInput(hint_text="SQL Query", multiline=True)
+        self.add_widget(self.query_input)
+
+        # Email Information Fields
+        self.add_widget(Label(text="Email Header"))
+        self.subject_input = TextInput(hint_text="Email Header")
+        self.add_widget(self.subject_input)
+
+        self.add_widget(Label(text="Email Body"))
+        self.body_input = TextInput(hint_text="Email Body")
+        self.add_widget(self.body_input)
+
+        self.add_widget(Label(text="Sender Email"))
+        self.sender_email_input = TextInput(hint_text="Sender Email")
+        self.add_widget(self.sender_email_input)
+
+        self.add_widget(Label(text="Password"))
+        self.sender_password_input = TextInput(hint_text="Password", password=True)
+        self.add_widget(self.sender_password_input)
+
+        self.add_widget(Label(text="Recipient(s)"))
+        self.recipients_input = TextInput(hint_text="Recipient(s), comma separated")
+        self.add_widget(self.recipients_input)
+
+        # Button Layout for Submit and Cancel
+        button_layout = BoxLayout(orientation='horizontal')
+        submit_button = Button(text="Submit", on_release=self.on_submit)
+        cancel_button = Button(text="Cancel", on_release=self.on_cancel)
+
+        button_layout.add_widget(submit_button)
+        button_layout.add_widget(cancel_button)
+        self.add_widget(button_layout)
+
+    def send_email(self, subject, body_html, recipient_emails, sender_email, sender_password):
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['Subject'] = subject
+        msg['To'] = ', '.join(recipient_emails) if isinstance(recipient_emails, list) else recipient_emails
+        msg.attach(MIMEText(body_html, 'html'))
+
+        try:
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+                server.login(sender_email, sender_password)
+                server.sendmail(sender_email, recipient_emails, msg.as_string())
+                self.show_popup("Success", "Email sent successfully!")
+        except Exception as e:
+            self.show_popup("Error", f"Failed to send email: {e}")
+
+    def fetch_data_from_sql_server(self, server, database, uid, pwd, query):
+        conn_str = f'DRIVER={{SQL Server}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd}'
+        try:
+            conn = pyodbc.connect(conn_str)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            data = cursor.fetchall()
+            conn.close()
+            return data
+        except Exception as e:
+            self.show_popup("Error", f"Failed to fetch data: {e}")
+            return []
+
+    def on_submit(self, instance):
+        server = self.server_input.text
+        database = self.database_input.text
+        uid = self.uid_input.text
+        pwd = self.password_input.text
+        query = self.query_input.text.strip()
+        subject = self.subject_input.text
+        body_html = self.body_input.text
+        sender_email = self.sender_email_input.text
+        sender_password = self.sender_password_input.text
+        recipients = [email.strip() for email in self.recipients_input.text.split(',')]
+
+        data = self.fetch_data_from_sql_server(server, database, uid, pwd, query)
+        if data:
+            # Convert data to HTML table format
+            html_content = "<table border='1'><tr><th>Column1</th><th>Column2</th></tr>"
+            for row in data:
+                html_content += f"<tr><td>{row[0]}</td><td>{row[1]}</td></tr>"
+            html_content += "</table>"
+            self.send_email(subject, html_content, recipients, sender_email, sender_password)
+
+    def on_cancel(self, instance):
+        # Clear all fields
+        self.server_input.text = ""
+        self.database_input.text = ""
+        self.uid_input.text = ""
+        self.password_input.text = ""
+        self.query_input.text = ""
+        self.subject_input.text = ""
+        self.body_input.text = ""
+        self.sender_email_input.text = ""
+        self.sender_password_input.text = ""
+        self.recipients_input.text = ""
+
+    def show_popup(self, title, message):
+        popup = Popup(title=title, content=Label(text=message), size_hint=(0.6, 0.4))
+        popup.open()
+
+class SQLAppMain(App):
+    def build(self):
+        return SQLApp()
+
+if __name__ == "__main__":
+    SQLAppMain().run()
